@@ -220,6 +220,23 @@ squash_lzham_stream_free (void* stream) {
   free (stream);
 }
 
+static SquashStatus
+squash_lzham_reset_stream (SquashStream* stream) {
+  SquashLZHAMStream* s = (SquashLZHAMStream*) stream;
+
+  if (stream->stream_type == SQUASH_STREAM_COMPRESS) {
+    s->lzham.comp.ctx = lzham_compress_reinit (s->lzham.comp.ctx);
+    if (SQUASH_UNLIKELY(s->lzham.comp.ctx == NULL))
+      return SQUASH_FAILED;
+  } else {
+    s->lzham.decomp.ctx = lzham_decompress_reinit (s->lzham.decomp.ctx, &(s->lzham.decomp.params));
+    if (SQUASH_UNLIKELY(s->lzham.decomp.ctx == NULL))
+      return SQUASH_FAILED;
+  }
+
+  return SQUASH_OK;
+}
+
 static SquashStream*
 squash_lzham_create_stream (SquashCodec* codec, SquashStreamType stream_type, SquashOptions* options) {
   return (SquashStream*) squash_lzham_stream_new (codec, stream_type, options);
@@ -371,6 +388,7 @@ squash_plugin_init_codec (SquashCodec* codec, SquashCodecImpl* impl) {
     impl->options = squash_lzham_options;
     impl->create_stream = squash_lzham_create_stream;
     impl->process_stream = squash_lzham_process_stream;
+    impl->reset_stream = squash_lzham_reset_stream;
     impl->get_max_compressed_size = squash_lzham_get_max_compressed_size;
     impl->decompress_buffer = squash_lzham_decompress_buffer;
     impl->compress_buffer = squash_lzham_compress_buffer;

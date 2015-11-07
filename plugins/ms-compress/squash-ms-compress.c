@@ -86,6 +86,25 @@ squash_ms_status_to_squash_status (MSCompStatus status) {
   }
 }
 
+static SquashStatus
+squash_ms_reset_stream (SquashStream* stream) {
+  SquashMSCompStream* s = (SquashMSCompStream*) stream;
+  MSCompStatus status;
+  MSCompFormat format = squash_ms_format_from_codec (stream->codec);
+
+  if (stream->stream_type == SQUASH_STREAM_COMPRESS) {
+    ms_deflate_end (&(s->mscomp));
+    status = ms_deflate_init (format, &(s->mscomp));
+  } else {
+    ms_inflate_end (&(s->mscomp));
+    status = ms_inflate_init (format, &(s->mscomp));
+  }
+
+  return (SQUASH_LIKELY(status == MSCOMP_OK)) ?
+    SQUASH_OK :
+    squash_error (squash_ms_status_to_squash_status (status));
+}
+
 static SquashMSCompStream*
 squash_ms_stream_new (SquashCodec* codec, SquashStreamType stream_type, SquashOptions* options) {
   SquashMSCompStream* stream;
@@ -293,6 +312,7 @@ squash_plugin_init_codec (SquashCodec* codec, SquashCodecImpl* impl) {
       impl->info                    = SQUASH_CODEC_INFO_CAN_FLUSH;
       impl->create_stream           = squash_ms_create_stream;
       impl->process_stream          = squash_ms_process_stream;
+      impl->reset_stream          = squash_ms_reset_stream;
     }
   } else {
     return squash_error (SQUASH_UNABLE_TO_LOAD);

@@ -57,6 +57,8 @@ SQUASH_NONNULL(1)
 SquashStatus        squash_buffer_stream_process (SquashBufferStream* stream);
 SQUASH_NONNULL(1)
 SquashStatus        squash_buffer_stream_finish  (SquashBufferStream* stream);
+SQUASH_NONNULL(1)
+SquashStatus        squash_buffer_stream_reset   (SquashBufferStream* stream);
 
 SQUASH_END_DECLS
 

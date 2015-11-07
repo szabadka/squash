@@ -6,6 +6,7 @@ set (codec_tests
   file
   flush
   random-data
+  reset
   splice
   stream-compress
   stream-decompress

@@ -135,6 +135,18 @@ squash_heatshrink_stream_free (void* stream) {
   free (stream);
 }
 
+static SquashStatus
+squash_heatshrink_reset_stream (SquashStream* stream) {
+  SquashHeatshrinkStream* s = (SquashHeatshrinkStream*) stream;
+
+  if (stream->stream_type == SQUASH_STREAM_COMPRESS)
+    heatshrink_encoder_reset (s->ctx.comp);
+  else
+    heatshrink_decoder_reset (s->ctx.decomp);
+
+  return SQUASH_OK;
+}
+
 static SquashStream*
 squash_heatshrink_create_stream (SquashCodec* codec, SquashStreamType stream_type, SquashOptions* options) {
   return (SquashStream*) squash_heatshrink_stream_new (codec, stream_type, options);
@@ -272,6 +284,7 @@ squash_plugin_init_codec (SquashCodec* codec, SquashCodecImpl* impl) {
     impl->options = squash_heatshrink_options;
     impl->create_stream = squash_heatshrink_create_stream;
     impl->process_stream = squash_heatshrink_process_stream;
+    impl->reset_stream = squash_heatshrink_reset_stream;
     impl->get_max_compressed_size = squash_heatshrink_get_max_compressed_size;
   } else {
     return SQUASH_UNABLE_TO_LOAD;

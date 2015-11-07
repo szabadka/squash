@@ -142,10 +142,51 @@ squash_lz4f_get_status (size_t res) {
   }
 }
 
+static SquashStatus
+squash_lz4f_reset_stream (SquashStream* stream) {
+  LZ4F_errorCode_t ec;
+  SquashLZ4FStream* s = (SquashLZ4FStream*) stream;
+
+  if (stream->stream_type == SQUASH_STREAM_COMPRESS) {
+    if (s->data.comp.ctx != NULL)
+      LZ4F_freeCompressionContext(s->data.comp.ctx);
+
+    ec = LZ4F_createCompressionContext(&(s->data.comp.ctx), LZ4F_VERSION);
+
+    s->data.comp.state = SQUASH_LZ4F_STATE_INIT;
+
+    if (s->data.comp.output_buffer != NULL) {
+      free (s->data.comp.output_buffer);
+      s->data.comp.output_buffer = NULL;
+    }
+    s->data.comp.output_buffer_pos = 0;
+    s->data.comp.output_buffer_size = 0;
+
+    s->data.comp.input_buffer_size = 0;
+
+    s->data.comp.prefs = (LZ4F_preferences_t) {
+      {
+        (LZ4F_blockSizeID_t) squash_codec_get_option_int_index (stream->codec, stream->options, SQUASH_LZ4F_OPT_BLOCK_SIZE),
+        blockLinked,
+        squash_codec_get_option_bool_index (stream->codec, stream->options, SQUASH_LZ4F_OPT_CHECKSUM) ?
+          contentChecksumEnabled :
+          noContentChecksum,
+      },
+      squash_codec_get_option_int_index (stream->codec, stream->options, SQUASH_LZ4F_OPT_LEVEL)
+    };
+  } else {
+    if (s->data.decomp.ctx != NULL)
+      LZ4F_freeDecompressionContext(s->data.decomp.ctx);
+
+    ec = LZ4F_createDecompressionContext(&(s->data.decomp.ctx), LZ4F_VERSION);
+  }
+
+  return SQUASH_UNLIKELY(LZ4F_isError (ec)) ? squash_error (SQUASH_FAILED) : SQUASH_OK;
+}
+
 static SquashLZ4FStream*
 squash_lz4f_stream_new (SquashCodec* codec, SquashStreamType stream_type, SquashOptions* options) {
   SquashLZ4FStream* stream;
-  LZ4F_errorCode_t ec;
 
   assert (codec != NULL);
 
@@ -155,34 +196,10 @@ squash_lz4f_stream_new (SquashCodec* codec, SquashStreamType stream_type, Squash
 
   squash_lz4f_stream_init (stream, codec, stream_type, options, squash_lz4f_stream_free);
 
-  if (stream_type == SQUASH_STREAM_COMPRESS) {
-    ec = LZ4F_createCompressionContext(&(stream->data.comp.ctx), LZ4F_VERSION);
-
-    stream->data.comp.state = SQUASH_LZ4F_STATE_INIT;
-
-    stream->data.comp.output_buffer = NULL;
-    stream->data.comp.output_buffer_pos = 0;
-    stream->data.comp.output_buffer_size = 0;
-
-    stream->data.comp.input_buffer_size = 0;
-
-    stream->data.comp.prefs = (LZ4F_preferences_t) {
-      {
-        (LZ4F_blockSizeID_t) squash_codec_get_option_int_index (codec, options, SQUASH_LZ4F_OPT_BLOCK_SIZE),
-        blockLinked,
-        squash_codec_get_option_bool_index (codec, options, SQUASH_LZ4F_OPT_CHECKSUM) ?
-          contentChecksumEnabled :
-          noContentChecksum,
-      },
-      squash_codec_get_option_int_index (codec, options, SQUASH_LZ4F_OPT_LEVEL)
-    };
-  } else {
-    ec = LZ4F_createDecompressionContext(&(stream->data.decomp.ctx), LZ4F_VERSION);
-  }
-
-  if (SQUASH_UNLIKELY(LZ4F_isError (ec))) {
+  SquashStatus res = squash_lz4f_reset_stream ((SquashStream*) stream);
+  if (SQUASH_UNLIKELY(res != SQUASH_OK)) {
     squash_object_unref (stream);
-    return (squash_error (SQUASH_FAILED), NULL);
+    return NULL;
   }
 
   return stream;
@@ -198,6 +215,13 @@ squash_lz4f_stream_init (SquashLZ4FStream* stream,
                          SquashOptions* options,
                          SquashDestroyNotify destroy_notify) {
   squash_stream_init ((SquashStream*) stream, codec, stream_type, (SquashOptions*) options, destroy_notify);
+
+  if (stream_type == SQUASH_STREAM_COMPRESS) {
+    stream->data.comp.ctx = NULL;
+    stream->data.comp.output_buffer = NULL;
+  } else {
+    stream->data.decomp.ctx = NULL;
+  }
 }
 
 static void
@@ -471,6 +495,7 @@ squash_plugin_init_lz4f (SquashCodec* codec, SquashCodecImpl* impl) {
     impl->get_max_compressed_size = squash_lz4f_get_max_compressed_size;
     impl->create_stream = squash_lz4f_create_stream;
     impl->process_stream = squash_lz4f_process_stream;
+    impl->reset_stream = squash_lz4f_reset_stream;
   } else {
     return SQUASH_UNABLE_TO_LOAD;
   }

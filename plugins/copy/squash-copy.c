@@ -92,6 +92,11 @@ squash_copy_stream_free (void* stream) {
   free (stream);
 }
 
+static SquashStatus
+squash_copy_reset_stream (SquashStream* stream) {
+  return SQUASH_OK;
+}
+
 static SquashStream*
 squash_copy_create_stream (SquashCodec* codec, SquashStreamType stream_type, SquashOptions* options) {
   return (SquashStream*) squash_copy_stream_new (codec, stream_type, options);
@@ -156,6 +161,7 @@ squash_plugin_init_codec (SquashCodec* codec, SquashCodecImpl* impl) {
     impl->compress_buffer = squash_copy_compress_buffer;
     impl->create_stream = squash_copy_create_stream;
     impl->process_stream = squash_copy_process_stream;
+    impl->reset_stream = squash_copy_reset_stream;
   } else {
     return squash_error (SQUASH_UNABLE_TO_LOAD);
   }

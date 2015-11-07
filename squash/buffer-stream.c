@@ -206,3 +206,15 @@ squash_buffer_stream_finish (SquashBufferStream* stream) {
 
   return (stream->output_pos == output->size) ? SQUASH_OK : SQUASH_PROCESSING;
 }
+
+SquashStatus
+squash_buffer_stream_reset (SquashBufferStream* stream) {
+  squash_buffer_clear (stream->input);
+  if (stream->output != NULL) {
+    squash_buffer_free (stream->output);
+    stream->output = NULL;
+  }
+  stream->output_pos = 0;
+
+  return SQUASH_OK;
+}

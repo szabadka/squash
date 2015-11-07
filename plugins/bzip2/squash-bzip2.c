@@ -75,6 +75,25 @@ static SquashBZ2Stream*  squash_bz2_stream_new      (SquashCodec* codec, SquashS
 static void              squash_bz2_stream_destroy  (void* stream);
 static void              squash_bz2_stream_free     (void* stream);
 
+static SquashStatus
+squash_bz2_status_to_squash_status (int status) {
+  switch (status) {
+    case BZ_OK:
+    case BZ_RUN_OK:
+    case BZ_FLUSH_OK:
+    case BZ_FINISH_OK:
+      return SQUASH_OK;
+    case BZ_OUTBUFF_FULL:
+      return squash_error (SQUASH_BUFFER_FULL);
+    case BZ_SEQUENCE_ERROR:
+      return squash_error (SQUASH_STATE);
+    case BZ_MEM_ERROR:
+      return squash_error (SQUASH_MEMORY);
+    default:
+      return squash_error (SQUASH_FAILED);
+  }
+}
+
 static SquashBZ2Stream*
 squash_bz2_stream_new (SquashCodec* codec, SquashStreamType stream_type, SquashOptions* options) {
   int bz2_e = 0;
@@ -140,26 +159,40 @@ squash_bz2_stream_free (void* stream) {
   free (stream);
 }
 
+static SquashStatus
+squash_bz2_reset_stream (SquashStream* stream) {
+  int bz_res;
+  SquashBZ2Stream* s = (SquashBZ2Stream*) stream;
+
+  if (stream->stream_type == SQUASH_STREAM_COMPRESS) {
+    bz_res = BZ2_bzCompressEnd (&(s->stream));
+    if (SQUASH_UNLIKELY(bz_res != BZ_OK))
+      return squash_bz2_status_to_squash_status (bz_res);
+
+    bz_res = BZ2_bzCompressInit (&(s->stream),
+                                 squash_codec_get_option_int_index (stream->codec, stream->options, SQUASH_BZ2_OPT_LEVEL),
+                                 0,
+                                 squash_codec_get_option_int_index (stream->codec, stream->options, SQUASH_BZ2_OPT_WORK_FACTOR));
+    if (SQUASH_UNLIKELY(bz_res != BZ_OK))
+      return squash_bz2_status_to_squash_status (bz_res);
+  } else {
+    bz_res = BZ2_bzDecompressEnd (&(s->stream));
+    if (SQUASH_UNLIKELY(bz_res != BZ_OK))
+      return squash_bz2_status_to_squash_status (bz_res);
+
+    bz_res = BZ2_bzDecompressInit (&(s->stream),
+                                   0,
+                                   squash_codec_get_option_int_index (stream->codec, stream->options, SQUASH_BZ2_OPT_SMALL));
+    if (SQUASH_UNLIKELY(bz_res != BZ_OK))
+      return squash_bz2_status_to_squash_status (bz_res);
+  }
+
+  return SQUASH_OK;
+}
+
 static SquashStream*
 squash_bz2_create_stream (SquashCodec* codec, SquashStreamType stream_type, SquashOptions* options) {
   return (SquashStream*) squash_bz2_stream_new (codec, stream_type, options);
-}
-
-static SquashStatus
-squash_bz2_status_to_squash_status (int status) {
-  switch (status) {
-    case BZ_OK:
-    case BZ_RUN_OK:
-    case BZ_FLUSH_OK:
-    case BZ_FINISH_OK:
-      return SQUASH_OK;
-    case BZ_OUTBUFF_FULL:
-      return squash_error (SQUASH_BUFFER_FULL);
-    case BZ_SEQUENCE_ERROR:
-      return squash_error (SQUASH_STATE);
-    default:
-      return squash_error (SQUASH_FAILED);
-  }
 }
 
 #define SQUASH_BZ2_STREAM_COPY_TO_BZ_STREAM(stream,bz2_stream) \
@@ -326,6 +359,7 @@ squash_plugin_init_codec (SquashCodec* codec, SquashCodecImpl* impl) {
     impl->options = squash_bz2_options;
     impl->create_stream = squash_bz2_create_stream;
     impl->process_stream = squash_bz2_process_stream;
+    impl->reset_stream = squash_bz2_reset_stream;
     impl->get_max_compressed_size = squash_bz2_get_max_compressed_size;
     impl->decompress_buffer = squash_bz2_decompress_buffer;
     impl->compress_buffer = squash_bz2_compress_buffer;

@@ -474,6 +474,7 @@ squash_codec_get_max_compressed_size (SquashCodec* codec, size_t uncompressed_si
  */
 SquashStream*
 squash_codec_create_stream_with_options (SquashCodec* codec, SquashStreamType stream_type, SquashOptions* options) {
+  SquashStream* stream = NULL;
   SquashCodecImpl* impl = NULL;
 
   assert (codec != NULL);
@@ -485,14 +486,16 @@ squash_codec_create_stream_with_options (SquashCodec* codec, SquashStreamType st
   }
 
   if (impl->create_stream != NULL) {
-    return impl->create_stream (codec, stream_type, options);
+    stream = impl->create_stream (codec, stream_type, options);
   } else {
     if (impl->process_stream == NULL) {
-      return (SquashStream*) squash_buffer_stream_new (codec, stream_type, options);
+      stream = (SquashStream*) squash_buffer_stream_new (codec, stream_type, options);
     } else {
       return NULL;
     }
   }
+
+  return stream;
 }
 
 /**

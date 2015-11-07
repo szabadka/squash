@@ -126,7 +126,7 @@ squash_zlib_stream_init (SquashZlibStream* stream,
                          SquashDestroyNotify destroy_notify) {
   squash_stream_init ((SquashStream*) stream, codec, stream_type, (SquashOptions*) options, destroy_notify);
 
-  z_stream tmp = { 0, };
+  const z_stream tmp = { 0, };
   stream->stream = tmp;
 }
 
@@ -189,6 +189,20 @@ squash_zlib_stream_new (SquashCodec* codec, SquashStreamType stream_type, Squash
   }
 
   return stream;
+}
+
+static SquashStatus
+squash_zlib_reset_stream (SquashStream* stream) {
+  int zlib_e;
+  SquashZlibStream* s = (SquashZlibStream*) stream;
+
+  if (stream->stream_type == SQUASH_STREAM_COMPRESS) {
+    zlib_e = deflateReset (&(s->stream));
+  } else {
+    zlib_e = inflateReset (&(s->stream));
+  }
+
+  return SQUASH_LIKELY(zlib_e == Z_OK) ? SQUASH_OK : squash_error (SQUASH_FAILED);
 }
 
 static SquashStream*
@@ -360,6 +374,7 @@ squash_plugin_init_codec (SquashCodec* codec, SquashCodecImpl* impl) {
     impl->options = squash_zlib_options;
     impl->create_stream = squash_zlib_create_stream;
     impl->process_stream = squash_zlib_process_stream;
+    impl->reset_stream = squash_zlib_reset_stream;
     impl->get_max_compressed_size = squash_zlib_get_max_compressed_size;
   } else {
     return SQUASH_UNABLE_TO_LOAD;

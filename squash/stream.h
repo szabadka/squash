@@ -101,6 +101,9 @@ SQUASH_API SquashStream*   squash_stream_new_with_options       (SquashCodec* co
                                                                  SquashOptions* options);
 
 SQUASH_NONNULL(1)
+SQUASH_API SquashStatus    squash_stream_reset                  (SquashStream* stream);
+
+SQUASH_NONNULL(1)
 SQUASH_API SquashStatus    squash_stream_process                (SquashStream* stream);
 SQUASH_NONNULL(1)
 SQUASH_API SquashStatus    squash_stream_flush                  (SquashStream* stream);

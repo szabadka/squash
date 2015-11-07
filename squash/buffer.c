@@ -79,9 +79,11 @@ squash_buffer_new (size_t preallocated_len) {
   buffer->data = NULL;
   buffer->size = 0;
   buffer->allocated = 0;
-  const bool allocated = squash_buffer_ensure_allocation (buffer, preallocated_len);
-  if (SQUASH_UNLIKELY(!allocated))
-    return (free (buffer), NULL);
+  if (preallocated_len > 0) {
+    const bool allocated = squash_buffer_ensure_allocation (buffer, preallocated_len);
+    if (SQUASH_UNLIKELY(!allocated))
+      return (free (buffer), NULL);
+  }
 
   return buffer;
 }

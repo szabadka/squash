@@ -96,6 +96,45 @@ squash_brotli_writer (void* user_data, const uint8_t* buf, size_t size) {
   return size;
 }
 
+static SquashStatus
+squash_brotli_reset_stream (SquashStream* stream) {
+  SquashBrotliStream* s = (SquashBrotliStream*) stream;
+
+    /* Not sure what we can re-use, so for now just free the whole
+       thing and allocate a new one. */
+
+  if (((SquashStream*) stream)->stream_type == SQUASH_STREAM_COMPRESS) {
+    if (s->compressor != NULL)
+      delete s->compressor;
+
+    brotli::BrotliParams params;
+    params.quality = squash_codec_get_option_int_index (stream->codec, stream->options, SQUASH_BROTLI_OPT_LEVEL);
+    params.mode = (brotli::BrotliParams::Mode) squash_codec_get_option_int_index (stream->codec, stream->options, SQUASH_BROTLI_OPT_MODE);
+
+    s->compressor = new brotli::BrotliCompressor (params);
+    if (SQUASH_UNLIKELY(s->compressor == NULL))
+      return squash_error (SQUASH_MEMORY);
+
+    s->remaining_block_in = s->compressor->input_block_size();
+    s->remaining_out = 0;
+    s->next_out = NULL;
+    s->should_flush = false;
+  } else if (((SquashStream*) stream)->stream_type == SQUASH_STREAM_DECOMPRESS) {
+    if (s->decompressor != NULL) {
+      BrotliStateCleanup(s->decompressor);
+      delete s->decompressor;
+    }
+
+    s->decompressor = new BrotliState ();
+    if (SQUASH_UNLIKELY(s->decompressor == NULL))
+      return squash_error (SQUASH_MEMORY);
+
+    BrotliStateInit(s->decompressor);
+  }
+
+  return SQUASH_OK;
+}
+
 static SquashBrotliStream*
 squash_brotli_stream_new (SquashCodec* codec, SquashStreamType stream_type, SquashOptions* options) {
   SquashBrotliStream* stream;
@@ -105,6 +144,12 @@ squash_brotli_stream_new (SquashCodec* codec, SquashStreamType stream_type, Squa
 
   stream = (SquashBrotliStream*) malloc (sizeof (SquashBrotliStream));
   squash_brotli_stream_init (stream, codec, stream_type, options, squash_brotli_stream_free);
+
+  SquashStatus res = squash_brotli_reset_stream ((SquashStream*) stream);
+  if (SQUASH_UNLIKELY(res != SQUASH_OK)) {
+    squash_object_unref (stream);
+    return NULL;
+  }
 
   return stream;
 }
@@ -120,21 +165,13 @@ squash_brotli_stream_init (SquashBrotliStream* s,
 
   s->finished = false;
   if (stream_type == SQUASH_STREAM_COMPRESS) {
-    brotli::BrotliParams params;
-    params.quality = squash_codec_get_option_int_index (stream->codec, stream->options, SQUASH_BROTLI_OPT_LEVEL);
-    params.mode = (brotli::BrotliParams::Mode) squash_codec_get_option_int_index (stream->codec, stream->options, SQUASH_BROTLI_OPT_MODE);
-    s->compressor = new brotli::BrotliCompressor (params);
-    s->remaining_block_in = s->compressor->input_block_size();
-    s->remaining_out = 0;
-    s->next_out = NULL;
-    s->should_flush = false;
+    s->compressor = NULL;
   } else if (stream_type == SQUASH_STREAM_DECOMPRESS) {
     s->in.cb_ = squash_brotli_reader;
     s->in.data_ = (void*) stream;
     s->out.cb_ = squash_brotli_writer;
     s->out.data_ = (void*) stream;
-    s->decompressor = new BrotliState ();
-    BrotliStateInit(s->decompressor);
+    s->decompressor = NULL;
   } else {
     squash_assert_unreachable();
   }
@@ -147,8 +184,10 @@ squash_brotli_stream_destroy (void* stream) {
   if (((SquashStream*) stream)->stream_type == SQUASH_STREAM_COMPRESS) {
     delete s->compressor;
   } else if (((SquashStream*) stream)->stream_type == SQUASH_STREAM_DECOMPRESS) {
-    BrotliStateCleanup(s->decompressor);
-    delete s->decompressor;
+    if (SQUASH_LIKELY(s->decompressor != NULL)) {
+      BrotliStateCleanup(s->decompressor);
+      delete s->decompressor;
+    }
   } else {
     squash_assert_unreachable();
   }
@@ -345,6 +384,7 @@ squash_plugin_init_codec (SquashCodec* codec, SquashCodecImpl* impl) {
     impl->get_max_compressed_size = squash_brotli_get_max_compressed_size;
     impl->create_stream = squash_brotli_create_stream;
     impl->process_stream = squash_brotli_process_stream;
+    impl->reset_stream = squash_brotli_reset_stream;
     impl->decompress_buffer = squash_brotli_decompress_buffer;
     impl->compress_buffer = squash_brotli_compress_buffer;
   } else {

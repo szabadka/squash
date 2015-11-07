@@ -115,6 +115,34 @@ squash_density_stream_new (SquashCodec* codec, SquashStreamType stream_type, Squ
   return stream;
 }
 
+static SquashStatus
+squash_density_reset_stream (SquashStream* stream) {
+  SquashDensityStream* s = (SquashDensityStream*) stream;
+
+  if (s->stream != NULL) {
+    density_stream_destroy (s->stream);
+  }
+
+  s->stream = density_stream_create (NULL, NULL);
+  if (SQUASH_UNLIKELY(s->stream == NULL))
+    return SQUASH_MEMORY;
+
+  s->next = SQUASH_DENSITY_ACTION_INIT;
+
+  s->buffer_size = 0;
+  s->buffer_pos = 0;
+  s->buffer_active = false;
+
+  s->input_buffer_size = 0;
+  s->input_buffer_active = false;
+
+  s->active_input_size = 0;
+
+  s->output_invalid = false;
+
+  return SQUASH_OK;
+}
+
 static void
 squash_density_stream_init (SquashDensityStream* stream,
                             SquashCodec* codec,
@@ -123,19 +151,9 @@ squash_density_stream_init (SquashDensityStream* stream,
                             SquashDestroyNotify destroy_notify) {
   squash_stream_init ((SquashStream*) stream, codec, stream_type, (SquashOptions*) options, destroy_notify);
 
-  stream->stream = density_stream_create (NULL, NULL);
-  stream->next = SQUASH_DENSITY_ACTION_INIT;
+  stream->stream = NULL;
 
-  stream->buffer_size = 0;
-  stream->buffer_pos = 0;
-  stream->buffer_active = false;
-
-  stream->input_buffer_size = 0;
-  stream->input_buffer_active = false;
-
-  stream->active_input_size = 0;
-
-  stream->output_invalid = false;
+  squash_density_reset_stream ((SquashStream*) stream);
 }
 
 static void
@@ -415,6 +433,7 @@ squash_plugin_init_codec (SquashCodec* codec, SquashCodecImpl* impl) {
     impl->options = squash_density_options;
     impl->create_stream = squash_density_create_stream;
     impl->process_stream = squash_density_process_stream;
+    impl->reset_stream = squash_density_reset_stream;
     impl->get_max_compressed_size = squash_density_get_max_compressed_size;
   } else {
     return squash_error (SQUASH_UNABLE_TO_LOAD);

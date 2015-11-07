@@ -67,6 +67,7 @@ struct SquashCodecImpl_ {
   /* Streams */
   SquashStream*           (* create_stream)            (SquashCodec* codec, SquashStreamType stream_type, SquashOptions* options);
   SquashStatus            (* process_stream)           (SquashStream* stream, SquashOperation operation);
+  SquashStatus            (* reset_stream)             (SquashStream* stream);
 
   /* Splicing */
   SquashStatus            (* splice)                   (SquashCodec* codec,

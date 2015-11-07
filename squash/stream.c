@@ -361,6 +361,47 @@ squash_stream_send_to_thread (SquashStream* stream, SquashOperation operation) {
   return result;
 }
 
+static void
+squash_stream_splice_cancel (SquashStream* stream) {
+  assert (stream != NULL);
+  assert (stream->priv != NULL);
+
+  SquashStreamPrivate* priv = (SquashStreamPrivate*) stream->priv;
+  if (priv == NULL)
+    return;
+
+  if (!priv->finished)
+    squash_stream_send_to_thread (stream, SQUASH_OPERATION_TERMINATE);
+  cnd_destroy (&(priv->request_cnd));
+  cnd_destroy (&(priv->result_cnd));
+  mtx_destroy (&(priv->io_mtx));
+}
+
+static void
+squash_stream_splice_init (SquashStream* stream) {
+  assert (stream != NULL);
+
+  mtx_init (&(stream->priv->io_mtx), mtx_plain);
+  mtx_lock (&(stream->priv->io_mtx));
+
+  stream->priv->request = SQUASH_OPERATION_INVALID;
+  cnd_init (&(stream->priv->request_cnd));
+
+  stream->priv->result = SQUASH_STATUS_INVALID;
+  cnd_init (&(stream->priv->result_cnd));
+
+  stream->priv->finished = false;
+#if !defined(NDEBUG)
+  int res =
+#endif
+    thrd_create (&(stream->priv->thread), (thrd_start_t) squash_stream_thread_func, stream);
+  assert (res == thrd_success);
+
+  while (stream->priv->result == SQUASH_STATUS_INVALID)
+    cnd_wait (&(stream->priv->result_cnd), &(stream->priv->io_mtx));
+  stream->priv->result = SQUASH_STATUS_INVALID;
+}
+
 /**
  * @brief Initialize a stream.
  * @protected
@@ -411,25 +452,7 @@ squash_stream_init (void* stream,
   if (codec->impl.create_stream == NULL && codec->impl.splice != NULL) {
     s->priv = malloc (sizeof (SquashStreamPrivate));
 
-    mtx_init (&(s->priv->io_mtx), mtx_plain);
-    mtx_lock (&(s->priv->io_mtx));
-
-    s->priv->request = SQUASH_OPERATION_INVALID;
-    cnd_init (&(s->priv->request_cnd));
-
-    s->priv->result = SQUASH_STATUS_INVALID;
-    cnd_init (&(s->priv->result_cnd));
-
-    s->priv->finished = false;
-#if !defined(NDEBUG)
-    int res =
-#endif
-      thrd_create (&(s->priv->thread), (thrd_start_t) squash_stream_thread_func, s);
-    assert (res == thrd_success);
-
-    while (s->priv->result == SQUASH_STATUS_INVALID)
-      cnd_wait (&(s->priv->result_cnd), &(s->priv->io_mtx));
-    s->priv->result = SQUASH_STATUS_INVALID;
+    squash_stream_splice_init (s);
   } else {
     s->priv = NULL;
   }
@@ -460,16 +483,8 @@ squash_stream_destroy (void* stream) {
 
   s = (SquashStream*) stream;
 
-  if (SQUASH_UNLIKELY(s->priv != NULL)) {
-    SquashStreamPrivate* priv = (SquashStreamPrivate*) s->priv;
-
-    if (!priv->finished) {
-      squash_stream_send_to_thread (s, SQUASH_OPERATION_TERMINATE);
-    }
-    cnd_destroy (&(priv->request_cnd));
-    cnd_destroy (&(priv->result_cnd));
-    mtx_destroy (&(priv->io_mtx));
-
+  if (s->priv != NULL) {
+    squash_stream_splice_cancel (s);
     free (s->priv);
   }
 
@@ -560,6 +575,65 @@ squash_stream_new (SquashCodec* codec,
   va_end (options_list);
 
   return stream;
+}
+
+/**
+ * @brief Reset a stream
+ *
+ * Resetting a stream is basically the same as destroying a stream and
+ * replacing it with a new one except that buffers can often be
+ * re-used, which can result in a significant performance improvement
+ * in cases where you are creating and destroying streams often.
+ *
+ * When resetting a stream, @ref SquashStream::total_in and @ref
+ * SquashStream::total_out wll be reset to 0.  @ref
+ * SquashStream::avail_in, @ref SquashStream::next_in, @ref
+ * SquashStream::avail_out, and @ref SquashStream::next_out will not
+ * be altered.
+ *
+ * The level of performance improvement varies greatly from codec to
+ * codec, but even in the case where a codec doesn't support resetting
+ * in any useful way there is a small advantage as the memory
+ * allocated by Squash itself needn't be freed and reallocated.
+ *
+ * It is worth noting that, if your use case would typically fit
+ * better with the all-in-one API (i.e., @ref squash_compress and @ref
+ * squash_decompress), using a stream can result in a performance
+ * increase or a decrease vs. using the all-in-one API.  Typically,
+ * for plugins which support streaming natively (see @ref
+ * SQUASH_CODEC_INFO_NATIVE_STREAMING) performance will improve, but
+ * for plugins which do not performance will be slightly degraded.
+ */
+SquashStatus
+squash_stream_reset (SquashStream* stream) {
+  assert (stream != NULL);
+
+  SquashCodec* codec = stream->codec;
+  assert (codec != NULL);
+  SquashCodecImpl* impl = squash_codec_get_impl (codec);
+  assert (impl != NULL);
+
+  SquashStatus res = SQUASH_OK;
+
+  if (impl->reset_stream != NULL) {
+    res = impl->reset_stream (stream);
+  } else if (impl->splice != NULL) {
+    squash_stream_splice_cancel (stream);
+    squash_stream_splice_init (stream);
+  } else if (SQUASH_UNLIKELY(impl->create_stream != NULL)) {
+    return squash_error (SQUASH_INVALID_OPERATION);
+  } else {
+    res = squash_buffer_stream_reset ((SquashBufferStream*) stream);
+  }
+
+  if (SQUASH_UNLIKELY(res != SQUASH_OK))
+    return res;
+
+  stream->state = SQUASH_STREAM_STATE_IDLE;
+  stream->total_in = 0;
+  stream->total_out = 0;
+
+  return SQUASH_OK;
 }
 
 static SquashStatus
