@@ -527,6 +527,23 @@ squash_file_write (SquashFile* file,
 }
 
 #if !defined(_WIN32)
+static FILE* squash_dev_null = NULL;
+static once_flag squash_dev_null_once = ONCE_FLAG_INIT;
+
+#if defined(__GNUC__)
+__attribute__((__destructor__))
+static void
+squash_dev_null_destroy (void) {
+  if (squash_dev_null != NULL)
+    fclose (squash_dev_null);
+}
+#endif
+
+static void
+squash_dev_null_init (void) {
+  squash_dev_null = fopen ("/dev/null", "wb+");
+}
+
 /* This is one of the ugliest hacks I've ever done.  It's not my idea
  * (I stole it from
  * https://stackoverflow.com/questions/4107947/how-to-determine-buffer-size-for-vswprintf-under-linux-gcc).
@@ -547,19 +564,18 @@ squash_file_write (SquashFile* file,
  * ugly, but it works. */
 static int
 _vscwprintf (const wchar_t *format, va_list ap) {
-  FILE* fp;
   va_list apc;
   int r;
 
-  fp = fopen ("/dev/null", "wb+");
-  if (fp == NULL)
+  call_once (&squash_dev_null_once, squash_dev_null_init);
+  if (squash_dev_null == NULL)
     return -1;
 
   va_copy (apc, ap);
-  r = vfwprintf (fp, format, apc);
+  r = vfwprintf (squash_dev_null, format, apc);
   va_end (apc);
 
-  fclose (fp);
+  fclose (squash_dev_null);
 
   return r;
 }
