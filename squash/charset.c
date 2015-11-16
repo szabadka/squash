@@ -81,7 +81,7 @@ squash_charset_get_wide (void) {
 
      If anyone encounters issues with it in practice, please let us
      know. */
-#  if __BYTE_ORDER == __LITTLE_ENDIAN
+#  if BYTE_ORDER == LITTLE_ENDIAN
   return "UTF-32LE";
 #  else
   return "UTF-32BE";
@@ -91,7 +91,7 @@ squash_charset_get_wide (void) {
      seems to be the only one using UTF-16, and they don't define
      __STDC_UTF_16__ (hence the special case above).  That said, the
      same issues as the 4-byte case above apply. */
-#  if __BYTE_ORDER == __LITTLE_ENDIAN
+#  if BYTE_ORDER == LITTLE_ENDIAN
   return "UTF-16LE";
 #  else
   return "UTF-16BE";
@@ -99,7 +99,7 @@ squash_charset_get_wide (void) {
 #elif (WCHAR_MAX == INT32_MAX) && defined(__APPLE__)
   /* AFAIK OS X is actually always little-endian, but they do allow
      for other values in their API... */
-#  if __BYTE_ORDER == __LITTLE_ENDIAN
+#  if BYTE_ORDER == LITTLE_ENDIAN
   return "UTF-32LE";
 #  else
   return "UTF-32BE";

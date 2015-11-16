@@ -625,8 +625,13 @@ squash_file_vwprintf (SquashFile* file,
 }
 
 #if defined(__MINGW32__) || defined(__MINGW64__) || defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsuggest-attribute=format"
+#  pragma GCC diagnostic push
+#  if defined(CFLAG_Wsuggest_attribute_format)
+#    pragma GCC diagnostic ignored "-Wsuggest-attribute=format"
+#  endif
+#  if defined(CFLAG_Wformat_nonliteral)
+#    pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#  endif
 #endif
 
 SquashStatus
