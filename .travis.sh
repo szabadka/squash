@@ -200,7 +200,8 @@ case "${1}" in
                 COMMON_COMPILER_FLAGS="${COMMON_COMPILER_FLAGS} -fsanitize=address"
                 ;;
             "tsan")
-                COMMON_COMPILER_FLAGS="${COMMON_COMPILER_FLAGS} -fsanitize=thread"
+                COMMON_COMPILER_FLAGS="${COMMON_COMPILER_FLAGS} -fsanitize=thread -fPIE -pie"
+                CONFIGURE_FLAGS="${CONFIGURE_FLAGS} -DENABLE_LZHAM=no"
                 ;;
             "ubsan")
                 COMMON_COMPILER_FLAGS="${COMMON_COMPILER_FLAGS} -fsanitize=undefined"
