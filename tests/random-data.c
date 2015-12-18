@@ -1,11 +1,14 @@
 #include "test-codecs.h"
 
-#define MAX_UNCOMPRESSED_LENGTH 4096
+// When testing new codecs, it's a good idea to try larger values to
+// verify the max compressed size calculation.  I usually set this to
+// about 512 MiB.
+#define MAX_UNCOMPRESSED_LENGTH ((size_t) (1024 * 1024 * 4))
 
 void
 check_codec (SquashCodec* codec) {
   size_t uncompressed_length;
-  uint8_t uncompressed_data[MAX_UNCOMPRESSED_LENGTH];
+  uint8_t* uncompressed_data = (uint8_t*) malloc (MAX_UNCOMPRESSED_LENGTH);
   size_t compressed_length;
   uint8_t* compressed_data = (uint8_t*) malloc (squash_codec_get_max_compressed_size (codec, MAX_UNCOMPRESSED_LENGTH));
   size_t decompressed_length;
@@ -14,26 +17,50 @@ check_codec (SquashCodec* codec) {
   size_t uncompressed_data_filled = 0;
   SquashStatus res;
 
-  // memset (uncompressed_data, 0, MAX_UNCOMPRESSED_LENGTH);
   memset (compressed_data, 0, squash_codec_get_max_compressed_size (codec, MAX_UNCOMPRESSED_LENGTH));
 
-  for ( uncompressed_length = 1 ;
+  for ( uncompressed_length = 1;
         uncompressed_length <= MAX_UNCOMPRESSED_LENGTH ;
-        uncompressed_length += g_test_quick () ? g_test_rand_int_range (32, 128) : 1 ) {
-    for ( ; uncompressed_data_filled < uncompressed_length ; uncompressed_data_filled++ ) {
-      uncompressed_data[uncompressed_data_filled] = (uint8_t) g_test_rand_int_range (0x00, 0xff);
+        uncompressed_length += g_test_quick () ?
+          (g_test_rand_int_range (256, 1024) * (2 + (uncompressed_length / 512))) :
+          1) {
+    for ( ; uncompressed_data_filled < uncompressed_length ; uncompressed_data_filled += sizeof(int) ) {
+      gint r = g_test_rand_int ();
+      memcpy (uncompressed_data + uncompressed_data_filled, &r, sizeof(int));
     }
 
     compressed_length = squash_codec_get_max_compressed_size (codec, uncompressed_length);
     g_assert (compressed_length > 0);
 
     res = squash_codec_compress (codec, &compressed_length, compressed_data, uncompressed_length, (uint8_t*) uncompressed_data, NULL);
-    SQUASH_ASSERT_OK(res);
+    if (SQUASH_UNLIKELY(res != SQUASH_OK)) {
+      size_t requested = squash_codec_get_max_compressed_size (codec, uncompressed_length);
+      compressed_length *= 2;
+      free (compressed_data);
+      compressed_data = malloc (compressed_length);
+      res = squash_codec_compress (codec, &compressed_length, compressed_data, uncompressed_length, (uint8_t*) uncompressed_data, NULL);
+      if (res == SQUASH_OK) {
+        g_error ("Failed for %zu bytes (requested %zu extra bytes for a total of %zu, needed %zu more)",
+                 uncompressed_length,
+                 requested - uncompressed_length,
+                 requested,
+                 compressed_length - requested);
+      } else {
+        g_error ("Failed for %zu bytes (requested %zu extra bytes for a total of %zu).  Doubling the allowed storage didn't help.",
+                 uncompressed_length,
+                 requested - uncompressed_length,
+                 requested);
+      }
+    }
     g_assert_cmpint (compressed_length, >, 0);
     g_assert_cmpint (compressed_length, <=, squash_codec_get_max_compressed_size (codec, uncompressed_length));
 
     // Helpful when adding new codecs which don't document this…
-    // g_message ("%" G_GSIZE_FORMAT " -> %" G_GSIZE_FORMAT " (%" G_GSIZE_FORMAT ")", uncompressed_length, compressed_length, compressed_length - uncompressed_length);
+    /* g_message ("%" G_GSIZE_FORMAT " -> %" G_GSIZE_FORMAT " (needs %" G_GSIZE_FORMAT ", requested %" G_GSIZE_FORMAT ")", */
+    /*            uncompressed_length, */
+    /*            compressed_length, */
+    /*            compressed_length - uncompressed_length, */
+    /*            squash_codec_get_max_compressed_size (codec, uncompressed_length) - uncompressed_length); */
 
     decompressed_length = uncompressed_length;
     res = squash_codec_decompress (codec, &decompressed_length, decompressed_data, compressed_length, compressed_data, NULL);
@@ -60,6 +87,7 @@ check_codec (SquashCodec* codec) {
     squash_codec_decompress (codec, &decompressed_length, decompressed_data, compressed_length, compressed_data, NULL);
   }
 
+  free (uncompressed_data);
   free (compressed_data);
   free (decompressed_data);
 }
